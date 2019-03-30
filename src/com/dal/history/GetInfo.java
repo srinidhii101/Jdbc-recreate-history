@@ -4,8 +4,10 @@ package com.dal.history;
 import com.dal.jdbc.JDBCConnector;
 import com.dal.jdbc.JdbcConfig;
 import com.dal.models.ProductHistory;
+import com.dal.models.ReorderHistory;
 import com.dal.models.ReorderHistoryTransaction;
 
+import java.math.BigDecimal;
 import java.sql.*;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -17,6 +19,7 @@ public class GetInfo implements IGetInfo {
 
     JdbcConfig jdbcConfig;
     JDBCConnector jdbcConnector;
+    public List<ReorderHistory> reorderHistories = new ArrayList<>();
 
     public GetInfo() {
         this.jdbcConfig = new JdbcConfig();
@@ -43,7 +46,7 @@ public class GetInfo implements IGetInfo {
         useDatabaseStatement.executeQuery("use " + jdbcConfig.getDatabase() + ";");
 
         String productInfoQuery = "SELECT orders.OrderDate, sum(orderdetails.Quantity) AS TotalOrders\n " +
-                "FROM class_3901.orders, class_3901.orderdetails\n" +
+                "FROM orders, orderdetails\n" +
                 "where orders.orderID = orderdetails.orderID\n" +
                 "and orderdetails.productId = " + productCode + "\n" +
                 "GROUP BY orders.OrderDate " +
@@ -57,31 +60,34 @@ public class GetInfo implements IGetInfo {
             int orderValue = Integer.parseInt(productHistoryResults.getString(2));
             productHistory.add(new ProductHistory(dateValue, orderValue));
         }
+        connection.close();
         return productHistory;
     }
 
     @Override
-    public double getReorderHistory(List<ProductHistory> productHistories, Integer maxInventoryStorage, Integer reorderLevel, Integer currentStockLevel) throws SQLException, ClassNotFoundException, ParseException {
+    public double getReorderHistory(List<ProductHistory> productHistories, Integer maxInventoryStorage,
+                                    Integer reorderLevel, Integer currentStockLevel, String productCode) throws SQLException, ClassNotFoundException, ParseException {
         List<ReorderHistoryTransaction> reorderHistoryTransactions = new ArrayList<>();
 
-        ProductHistory p1 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-01"), 2);
-        ProductHistory p2 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-02"), 3);
-        ProductHistory p3 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-03"), 2);
-        ProductHistory p4 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-04"), 3);
-        ProductHistory p5 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-05"), 2);
-        ProductHistory p6 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-06"), 2);
-        ProductHistory p7 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-07"), 1);
 
-        List<ProductHistory> tempList = new ArrayList<>();
-        tempList.add(p7);
-        tempList.add(p6);
-        tempList.add(p5);
-        tempList.add(p4);
-        tempList.add(p3);
-        tempList.add(p2);
-        tempList.add(p1);
-
-        productHistories = tempList;
+//        ProductHistory p1 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-01"), 2);
+//        ProductHistory p2 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-02"), 3);
+//        ProductHistory p3 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-03"), 2);
+//        ProductHistory p4 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-04"), 3);
+//        ProductHistory p5 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-05"), 2);
+//        ProductHistory p6 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-06"), 2);
+//        ProductHistory p7 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-07"), 1);
+//
+//        List<ProductHistory> tempList = new ArrayList<>();
+//        tempList.add(p7);
+//        tempList.add(p6);
+//        tempList.add(p5);
+//        tempList.add(p4);
+//        tempList.add(p3);
+//        tempList.add(p2);
+//        tempList.add(p1);
+//
+//        productHistories = tempList;
 
         // Setting Initial Rows
         ReorderHistoryTransaction initialTransaction = new ReorderHistoryTransaction();
@@ -99,9 +105,15 @@ public class GetInfo implements IGetInfo {
             reorderHistoryTransaction.setDayEndInventory(reorderHistoryTransactions.get(i - 1).getDayStartInventory());
             reorderHistoryTransaction.setDaySales(productHistories.get(i).getNoOfProducts());
             if (reorderHistoryTransactions.get(i - 1).getDayStartInventory() >= maxInventoryStorage) {
-                Integer noOfReorderUnits = reorderHistoryTransactions.get(i -1).getDayStartInventory() - reorderLevel;
+                Integer noOfReorderUnits = reorderHistoryTransactions.get(i - 1).getDayStartInventory() - reorderLevel;
                 reorderHistoryTransaction.setReorderUnits(noOfReorderUnits);
                 reorderHistoryTransaction.setSalesDayEndInventory(reorderHistoryTransactions.get(i - 1).getDayEndInventory() - noOfReorderUnits);
+                ReorderHistory reorderHistory = new ReorderHistory();
+                reorderHistory.setReorderDate(reorderHistoryTransaction.getTransactionDate());
+                reorderHistory.setReorderUnits(noOfReorderUnits);
+                reorderHistory.setUnitPrice(getUnitPrice(reorderHistoryTransaction, productCode));
+                reorderHistory.setTotalPrice(reorderHistory.getUnitPrice() * reorderHistory.getReorderUnits());
+                reorderHistories.add(reorderHistory);
             } else {
                 reorderHistoryTransaction.setSalesDayEndInventory(reorderHistoryTransactions.get(i - 1).getDayStartInventory());
                 reorderHistoryTransaction.setReorderUnits(0);
@@ -110,6 +122,33 @@ public class GetInfo implements IGetInfo {
             reorderHistoryTransactions.add(reorderHistoryTransaction);
         }
         return 0;
+    }
+
+    @Override
+    public double getUnitPrice(ReorderHistoryTransaction reorderHistoryTransaction, String productCode) throws SQLException, ClassNotFoundException {
+        Double unitPrice = 0.0;
+        Connection connection = jdbcConnector.connectionProvider(jdbcConfig);
+        SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd");
+
+        Statement useDatabaseStatement = connection.createStatement();
+        useDatabaseStatement.executeQuery("USE " + jdbcConfig.getDatabase());
+
+        Statement unitPriceInformationStatement = connection.createStatement();
+        ResultSet unitPriceInformationResults = unitPriceInformationStatement.executeQuery("Select orderdetails.UnitPrice\n" +
+                "from orderdetails, orders\n" +
+                "where orderdetails.OrderID = orders.OrderID\n" +
+                "and orderdetails.ProductID = " + productCode + "\n" +
+                "and orders.OrderDate = \"" + simpleDateFormat.format(reorderHistoryTransaction.getTransactionDate()) + "\";");
+
+        ResultSetMetaData resultSetMetaData = unitPriceInformationResults.getMetaData();
+        while (unitPriceInformationResults.next()) {
+            if (resultSetMetaData.getColumnCount() == 1) {
+                BigDecimal up = (BigDecimal) unitPriceInformationResults.getObject(1);
+                unitPrice = up.doubleValue();
+            }
+        }
+        connection.close();
+        return unitPrice * 0.85;
     }
 
 
@@ -131,10 +170,11 @@ public class GetInfo implements IGetInfo {
                 listOfProducts.add(columnValue);
             }
         }
+        connection.close();
         return listOfProducts;
     }
 
-    public double getMaximumInventoryStorage(String productCode) throws SQLException, ClassNotFoundException {
+    public Integer getMaximumInventoryStorage(String productCode) throws SQLException, ClassNotFoundException {
         Integer unitsOnOrderLevel = 0;
         Connection connection = jdbcConnector.connectionProvider(jdbcConfig);
 
@@ -150,13 +190,10 @@ public class GetInfo implements IGetInfo {
                 unitsOnOrderLevel = (Integer) unitsOnOrderInformationResults.getObject(1);
             }
         }
+        connection.close();
         if (unitsOnOrderLevel != null && unitsOnOrderLevel != 0) return unitsOnOrderLevel;
-        else if (unitsOnOrderLevel == 0) return (4 * getReorderLevel(productCode));
-        else {
-            if (unitsOnOrderLevel == 0) {
-                getReorderLevel(productCode);
-            }
-        }
+        else if (unitsOnOrderLevel == 0 && getReorderLevel(productCode) > 0) return (4 * getReorderLevel(productCode));
+        else if (unitsOnOrderLevel == 0 && getReorderLevel(productCode) == 0) return getCurrentStockLevel(productCode);
         return 0;
     }
 
@@ -177,6 +214,7 @@ public class GetInfo implements IGetInfo {
                 currentStockLevel = (Integer) stockLevelInformationResults.getObject(1);
             }
         }
+        connection.close();
         return currentStockLevel;
     }
 
@@ -197,6 +235,7 @@ public class GetInfo implements IGetInfo {
                 reorderLevel = (Integer) reorderInformationResults.getObject(1);
             }
         }
+        connection.close();
         return reorderLevel;
     }
 }
