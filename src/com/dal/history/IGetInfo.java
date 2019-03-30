@@ -1,8 +1,10 @@
 package com.dal.history;
 
+import com.dal.models.ProductHistory;
+
 import java.sql.SQLException;
+import java.text.ParseException;
 import java.util.List;
-import java.util.Map;
 
 public interface IGetInfo {
 
@@ -14,6 +16,8 @@ public interface IGetInfo {
 
     Integer getReorderLevel(String productCode) throws SQLException, ClassNotFoundException;
 
-    Map<String, String> getProductHistory(String productCode) throws SQLException, ClassNotFoundException;
+    List<ProductHistory> getProductHistory(String productCode) throws SQLException, ClassNotFoundException, ParseException;
+
+    double getReorderHistory(List<ProductHistory> productHistories, Integer maxInventoryStorage, Integer reorderLevel, Integer currentStockLevel) throws SQLException, ClassNotFoundException, ParseException;
 
 }

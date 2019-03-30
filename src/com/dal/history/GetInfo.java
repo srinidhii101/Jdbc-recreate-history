@@ -3,12 +3,15 @@ package com.dal.history;
 
 import com.dal.jdbc.JDBCConnector;
 import com.dal.jdbc.JdbcConfig;
+import com.dal.models.ProductHistory;
+import com.dal.models.ReorderHistoryTransaction;
 
 import java.sql.*;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Date;
 import java.util.List;
-import java.util.Map;
 
 public class GetInfo implements IGetInfo {
 
@@ -33,8 +36,8 @@ public class GetInfo implements IGetInfo {
     }
 
     @Override
-    public Map<String, String> getProductHistory(String productCode) throws SQLException, ClassNotFoundException {
-        Map<String, String> productHistory = new HashMap<>();
+    public List<ProductHistory> getProductHistory(String productCode) throws SQLException, ClassNotFoundException, ParseException {
+        List<ProductHistory> productHistory = new ArrayList<>();
         Connection connection = jdbcConnector.connectionProvider(jdbcConfig);
         Statement useDatabaseStatement = connection.createStatement();
         useDatabaseStatement.executeQuery("use " + jdbcConfig.getDatabase() + ";");
@@ -50,11 +53,63 @@ public class GetInfo implements IGetInfo {
         ResultSet productHistoryResults = productHistoryStatement.executeQuery(productInfoQuery);
 
         while (productHistoryResults.next()) {
-            String dateValue = productHistoryResults.getString(1);
-            String orderValue = productHistoryResults.getString(1);
-            productHistory.put(dateValue, orderValue);
+            Date dateValue = new SimpleDateFormat("yyyy-MM-dd").parse(productHistoryResults.getString(1));
+            int orderValue = Integer.parseInt(productHistoryResults.getString(2));
+            productHistory.add(new ProductHistory(dateValue, orderValue));
         }
         return productHistory;
+    }
+
+    @Override
+    public double getReorderHistory(List<ProductHistory> productHistories, Integer maxInventoryStorage, Integer reorderLevel, Integer currentStockLevel) throws SQLException, ClassNotFoundException, ParseException {
+        List<ReorderHistoryTransaction> reorderHistoryTransactions = new ArrayList<>();
+
+        ProductHistory p1 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-01"), 2);
+        ProductHistory p2 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-02"), 3);
+        ProductHistory p3 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-03"), 2);
+        ProductHistory p4 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-04"), 3);
+        ProductHistory p5 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-05"), 2);
+        ProductHistory p6 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-06"), 2);
+        ProductHistory p7 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-07"), 1);
+
+        List<ProductHistory> tempList = new ArrayList<>();
+        tempList.add(p7);
+        tempList.add(p6);
+        tempList.add(p5);
+        tempList.add(p4);
+        tempList.add(p3);
+        tempList.add(p2);
+        tempList.add(p1);
+
+        productHistories = tempList;
+
+        // Setting Initial Rows
+        ReorderHistoryTransaction initialTransaction = new ReorderHistoryTransaction();
+        initialTransaction.setTransactionDate(productHistories.get(0).getDateOfPurchase());
+        initialTransaction.setDayEndInventory(currentStockLevel);
+        initialTransaction.setReorderUnits(0);
+        initialTransaction.setSalesDayEndInventory(currentStockLevel);
+        initialTransaction.setDaySales(productHistories.get(0).getNoOfProducts());
+        initialTransaction.setDayStartInventory(initialTransaction.salesDayEndInventory + initialTransaction.daySales);
+        reorderHistoryTransactions.add(initialTransaction);
+
+        for (int i = 1; i < productHistories.size(); i++) {
+            ReorderHistoryTransaction reorderHistoryTransaction = new ReorderHistoryTransaction();
+            reorderHistoryTransaction.setTransactionDate(productHistories.get(i).getDateOfPurchase());
+            reorderHistoryTransaction.setDayEndInventory(reorderHistoryTransactions.get(i - 1).getDayStartInventory());
+            reorderHistoryTransaction.setDaySales(productHistories.get(i).getNoOfProducts());
+            if (reorderHistoryTransactions.get(i - 1).getDayStartInventory() >= maxInventoryStorage) {
+                Integer noOfReorderUnits = reorderHistoryTransactions.get(i -1).getDayStartInventory() - reorderLevel;
+                reorderHistoryTransaction.setReorderUnits(noOfReorderUnits);
+                reorderHistoryTransaction.setSalesDayEndInventory(reorderHistoryTransactions.get(i - 1).getDayEndInventory() - noOfReorderUnits);
+            } else {
+                reorderHistoryTransaction.setSalesDayEndInventory(reorderHistoryTransactions.get(i - 1).getDayStartInventory());
+                reorderHistoryTransaction.setReorderUnits(0);
+            }
+            reorderHistoryTransaction.setDayStartInventory(reorderHistoryTransaction.salesDayEndInventory + reorderHistoryTransaction.daySales);
+            reorderHistoryTransactions.add(reorderHistoryTransaction);
+        }
+        return 0;
     }
 
 
@@ -92,7 +147,7 @@ public class GetInfo implements IGetInfo {
         ResultSetMetaData resultSetMetaData = unitsOnOrderInformationResults.getMetaData();
         while (unitsOnOrderInformationResults.next()) {
             if (resultSetMetaData.getColumnCount() == 1) {
-                unitsOnOrderLevel = (Integer) unitsOnOrderInformationResults.getObject(0);
+                unitsOnOrderLevel = (Integer) unitsOnOrderInformationResults.getObject(1);
             }
         }
         if (unitsOnOrderLevel != null && unitsOnOrderLevel != 0) return unitsOnOrderLevel;
@@ -119,7 +174,7 @@ public class GetInfo implements IGetInfo {
         ResultSetMetaData resultSetMetaData = stockLevelInformationResults.getMetaData();
         while (stockLevelInformationResults.next()) {
             if (resultSetMetaData.getColumnCount() == 1) {
-                currentStockLevel = (Integer) stockLevelInformationResults.getObject(0);
+                currentStockLevel = (Integer) stockLevelInformationResults.getObject(1);
             }
         }
         return currentStockLevel;
@@ -139,7 +194,7 @@ public class GetInfo implements IGetInfo {
         ResultSetMetaData resultSetMetaData = reorderInformationResults.getMetaData();
         while (reorderInformationResults.next()) {
             if (resultSetMetaData.getColumnCount() == 1) {
-                reorderLevel = (Integer) reorderInformationResults.getObject(0);
+                reorderLevel = (Integer) reorderInformationResults.getObject(1);
             }
         }
         return reorderLevel;
