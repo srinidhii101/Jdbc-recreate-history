@@ -69,27 +69,6 @@ public class GetInfo implements IGetInfo {
                                     Integer reorderLevel, Integer currentStockLevel, String productCode) throws SQLException, ClassNotFoundException, ParseException {
         List<ReorderHistoryTransaction> reorderHistoryTransactions = new ArrayList<>();
 
-
-//        ProductHistory p1 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-01"), 2);
-//        ProductHistory p2 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-02"), 3);
-//        ProductHistory p3 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-03"), 2);
-//        ProductHistory p4 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-04"), 3);
-//        ProductHistory p5 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-05"), 2);
-//        ProductHistory p6 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-06"), 2);
-//        ProductHistory p7 = new ProductHistory(new SimpleDateFormat("yyyy-MM-dd").parse("2000-01-07"), 1);
-//
-//        List<ProductHistory> tempList = new ArrayList<>();
-//        tempList.add(p7);
-//        tempList.add(p6);
-//        tempList.add(p5);
-//        tempList.add(p4);
-//        tempList.add(p3);
-//        tempList.add(p2);
-//        tempList.add(p1);
-//
-//        productHistories = tempList;
-
-        // Setting Initial Rows
         ReorderHistoryTransaction initialTransaction = new ReorderHistoryTransaction();
         initialTransaction.setTransactionDate(productHistories.get(0).getDateOfPurchase());
         initialTransaction.setDayEndInventory(currentStockLevel);
@@ -149,6 +128,78 @@ public class GetInfo implements IGetInfo {
         }
         connection.close();
         return unitPrice * 0.85;
+    }
+
+    @Override
+    public List<String> getListOfSuppliers() throws SQLException, ClassNotFoundException {
+        List<String> listOfProducts = new ArrayList<>();
+        Connection connection = jdbcConnector.connectionProvider(jdbcConfig);
+
+        Statement useDatabaseStatement = connection.createStatement();
+        useDatabaseStatement.executeQuery("USE " + jdbcConfig.getDatabase());
+
+        Statement productInformationStatement = connection.createStatement();
+        ResultSet productInformationResults = productInformationStatement.executeQuery("Select suppliers.SupplierID from suppliers;");
+
+        ResultSetMetaData resultSetMetaData = productInformationResults.getMetaData();
+        while (productInformationResults.next()) {
+            for (int i = 1; i <= resultSetMetaData.getColumnCount(); i++) {
+                String columnValue = productInformationResults.getString(i);
+                listOfProducts.add(columnValue);
+            }
+        }
+        connection.close();
+        return listOfProducts;
+    }
+
+    @Override
+    public List<String> getListOfProductsForSuppliers(String supplierId) throws SQLException, ClassNotFoundException {
+        List<String> listOfProducts = new ArrayList<>();
+        Connection connection = jdbcConnector.connectionProvider(jdbcConfig);
+
+        Statement useDatabaseStatement = connection.createStatement();
+        useDatabaseStatement.executeQuery("USE " + jdbcConfig.getDatabase());
+
+        Statement productInformationStatement = connection.createStatement();
+        ResultSet productInformationResults = productInformationStatement.executeQuery("Select products.ProductID \n" +
+                "from products, suppliers\n" +
+                "where products.SupplierID = suppliers.SupplierID\n" +
+                "and suppliers.SupplierId = " + supplierId + ";");
+
+        ResultSetMetaData resultSetMetaData = productInformationResults.getMetaData();
+        while (productInformationResults.next()) {
+            for (int i = 1; i <= resultSetMetaData.getColumnCount(); i++) {
+                String columnValue = productInformationResults.getString(i);
+                listOfProducts.add(columnValue);
+            }
+        }
+        connection.close();
+        return listOfProducts;
+    }
+
+    @Override
+    public List<ProductHistory> getProductHistoryByDate(String productCode, String targetDate) throws SQLException, ClassNotFoundException, ParseException {
+        List<ProductHistory> productHistory = new ArrayList<>();
+        Connection connection = jdbcConnector.connectionProvider(jdbcConfig);
+        Statement useDatabaseStatement = connection.createStatement();
+        useDatabaseStatement.executeQuery("use " + jdbcConfig.getDatabase() + ";");
+
+        String productInfoQuery = "SELECT orders.OrderDate, orderdetails.quantity AS TotalOrders\n" +
+                "                FROM orders, orderdetails\n" +
+                "                where orders.orderID = orderdetails.orderID\n" +
+                "                and orderdetails.productId = " + productCode + "\n" +
+                "                and orders.OrderDate = \"" + targetDate + "\"";
+
+        Statement productHistoryStatement = connection.createStatement();
+        ResultSet productHistoryResults = productHistoryStatement.executeQuery(productInfoQuery);
+
+        while (productHistoryResults.next()) {
+            Date dateValue = new SimpleDateFormat("yyyy-MM-dd").parse(productHistoryResults.getString(1));
+            int orderValue = Integer.parseInt(productHistoryResults.getString(2));
+            productHistory.add(new ProductHistory(dateValue, orderValue));
+        }
+        connection.close();
+        return productHistory;
     }
 
 

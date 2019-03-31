@@ -23,4 +23,12 @@ public interface IGetInfo {
 
     double getUnitPrice(ReorderHistoryTransaction reorderHistoryTransaction, String productCode) throws SQLException, ClassNotFoundException;
 
+    List<String> getListOfSuppliers() throws SQLException, ClassNotFoundException;
+
+    List<String> getListOfProductsForSuppliers(String supplierId) throws SQLException, ClassNotFoundException;
+
+    List<ProductHistory> getProductHistoryByDate(String productCode, String targetDate) throws SQLException, ClassNotFoundException, ParseException;
+
+
+
 }
